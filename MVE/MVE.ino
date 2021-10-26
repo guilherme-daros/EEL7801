@@ -6,13 +6,13 @@
 
 #include "Adafruit_VL53L0X.h"
 
-#define MVE_HEIGHT 2500  // mm
-#define HALT_TIME 5000   // ms
-#define BASE_ADDR 0x0000ABCD
+#define MVE_HEIGHT 300  // mm
+#define HALT_TIME 5000  // ms
+#define BASE_ADDR 0x00000000
 #define GreenLED 5
 #define RedLED 6
 
-typedef union ID {
+union ID {
     uint32_t full;
     byte partial[4];
 };
@@ -24,11 +24,15 @@ MCP2515 comModule(10);
 // Declaração do tipo da estrutura que irá armazenar o frame da comunicação CAN
 struct can_frame bufferMessage;
 
-//
+// aux stuff
 bool isConfigured = false;
 bool stringComplete = false;
 String inString;
 ID moduleId;
+
+enum STATE { OCUPADO, LIVRE };
+STATE state = OCUPADO;
+STATE last_state = LIVRE;
 
 void setup() {
     Serial.begin(9600);
@@ -67,10 +71,6 @@ void setup() {
 void loop() {
     if (!isConfigured && stringComplete) {
         moduleId.full = BASE_ADDR + inString.toInt();
-        // Estabelece o ID da vaga de estacionamento
-        bufferMessage.can_id = moduleId.full;
-        bufferMessage.can_dlc = 1;
-
         for (int i = 0; i < 4; i++) {
             EEPROM.write(i, moduleId.partial[i]);
         }
@@ -85,37 +85,35 @@ void loop() {
     if (isConfigured) {
         VL53L0X_RangingMeasurementData_t Measurement;
         lox.rangingTest(&Measurement, false);
-
-        if (Measurement.RangeStatus != 4 && isConfigured) {
-            if (Measurement.RangeMilliMeter <= MVE_HEIGHT) {
-                // Se tiver carro
-                digitalWrite(GreenLED, LOW);
-                digitalWrite(RedLED, HIGH);
-                if (bufferMessage.data[0] ==
-                    0b00000000) {  // Se não tinha carro
-                    bufferMessage.data[0] = 0b00000001;
-                    comModule.sendMessage(&bufferMessage);
-                } else {
-                    // Se tinha carro
-                    bufferMessage.data[0] = 0b00000000;
-                    delay(HALT_TIME);
-                }
-            } else {
-                // Se não tiver carro
+        state = getState(Measurement);
+        // Serial.print("[MVE] Distancia medida: ");
+        // Serial.println(Measurement.RangeMilliMeter);
+        // Serial.print(last_state);
+        // Serial.print(" | ");
+        // Serial.println(state);
+        delay(100);
+        if (last_state != state) {
+            last_state = state;
+            if (state == LIVRE) {
                 digitalWrite(GreenLED, HIGH);
                 digitalWrite(RedLED, LOW);
-                if (bufferMessage.data[0] == 0b00000001) {
-                    // Se não tinha carro
-                    bufferMessage.data[0] = 0b00000001;
-                    delay(HALT_TIME);
-                } else {
-                    // Se tinha carro
-                    bufferMessage.data[0] = 0b00000000;
-                    comModule.sendMessage(&bufferMessage);
-                }
+                bufferMessage.can_id = moduleId.full;
+                bufferMessage.can_dlc = 1;
+                bufferMessage.data[0] = 0;
+                comModule.sendMessage(&bufferMessage);
+                Serial.println("[MVE] Estado da vaga: Livre");
+            } else {
+                digitalWrite(GreenLED, LOW);
+                digitalWrite(RedLED, HIGH);
+                bufferMessage.can_id = moduleId.full;
+                bufferMessage.can_dlc = 1;
+                bufferMessage.data[0] = 1;
+                comModule.sendMessage(&bufferMessage);
+                Serial.println("[MVE] Estado da vaga: Ocupado");
             }
         }
     }
+    // delay(10);
 }
 
 void serialEvent() {
@@ -125,5 +123,13 @@ void serialEvent() {
         if (inChar == '\n') {
             stringComplete = true;
         }
+    }
+}
+
+STATE getState(VL53L0X_RangingMeasurementData_t Measurement) {
+    if (Measurement.RangeStatus != 4) {
+        return OCUPADO;
+    } else {
+        return LIVRE;
     }
 }

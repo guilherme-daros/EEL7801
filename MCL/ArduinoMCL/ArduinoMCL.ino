@@ -1,7 +1,7 @@
 #include <SPI.h>
 #include <mcp2515.h>
 
-typedef union ID {
+union ID {
     uint32_t full;
     byte partial[4];
 };
@@ -22,9 +22,9 @@ void setup() {
 
 void loop() {
     if (comModule.readMessage(&bufferMessage) == MCP2515::ERROR_OK) {
-        Serial.print(bufferMessage.can_id, HEX);
+        Serial.print(bufferMessage.can_id);
         Serial.print(";");
-        Serial.print(bufferMessage.data[0], HEX);
+        Serial.print(bufferMessage.data[0]);
         Serial.print("\n");
     }
 }
