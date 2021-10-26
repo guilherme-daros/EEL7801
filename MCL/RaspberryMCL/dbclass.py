@@ -2,6 +2,7 @@ import sqlite3
 from sqlite3 import Error
 from time import strftime
 from uuid import uuid4
+import os
 
 class Database:
 
@@ -18,7 +19,7 @@ class Database:
             assert f'{error}'
         finally:
             if connector:
-                self.executeScript('schema.sql')
+                self.executeScript('/home/pi/EEL7801/MCL/RaspberryMCL/schema.sql')
                 connector.close()
 
     def getTables(self):
